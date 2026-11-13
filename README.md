@@ -2,7 +2,7 @@
 
 A live PM2.5 forecast for ten cities in Africa, Asia and Latin America, from a model trained on four years of Copernicus data.
 
-**[Open the live dashboard](https://chiamaka-uchenna.github.io/urban-air-quality-forecast/)** · **[Read the notebook](notebooks/air_quality_forecast.ipynb)**
+**[Open the Streamlit app](https://urban-air-quality-forecast-5w3azvwevcf9chmpkgm7bv.streamlit.app/)** · **[Open the web dashboard](https://chiamaka-uchenna.github.io/urban-air-quality-forecast/)** · **[Read the notebook](notebooks/air_quality_forecast.ipynb)**
 
 ![Key chart from the analysis](assets/preview.png)
 
@@ -41,7 +41,7 @@ The dashboard is a static page served by GitHub Pages from the `docs/` folder. T
 
 ## Streamlit app
 
-The same model and charts are also packaged as a Streamlit app in `app/`, for hosting on Streamlit Community Cloud or any Python server:
+The same model and charts are deployed as a Streamlit app on Streamlit Community Cloud: [https://urban-air-quality-forecast-5w3azvwevcf9chmpkgm7bv.streamlit.app/](https://urban-air-quality-forecast-5w3azvwevcf9chmpkgm7bv.streamlit.app/). If the app has been idle it takes a few seconds to wake up. The code is in `app/`. To run it locally:
 
 ```bash
 pip install -r app/requirements.txt
