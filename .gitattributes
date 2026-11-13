@@ -1,0 +1,3 @@
+# Count the dashboard code in the repository language statistics
+docs/** -linguist-documentation
+docs/data/** linguist-generated

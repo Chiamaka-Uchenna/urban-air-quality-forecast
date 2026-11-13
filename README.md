@@ -39,13 +39,26 @@ Every step is explained in the notebook, with the reasoning behind each decision
 
 The dashboard is a static page served by GitHub Pages from the `docs/` folder. The trained model is exported from the notebook as JSON and scored in the browser with a few lines of JavaScript, so there is no server to maintain. The notebook checks that the exported model reproduces the original predictions before writing the file.
 
+## Streamlit app
+
+The same model and charts are also packaged as a Streamlit app in `app/`, for hosting on Streamlit Community Cloud or any Python server:
+
+```bash
+pip install -r app/requirements.txt
+streamlit run app/streamlit_app.py
+```
+
+`app/common.py` contains the scoring code: it loads the exported trees and reproduces the model's predictions in plain Python.
+
 ## Repository layout
 
 ```
 notebooks/air_quality_forecast.ipynb   the full analysis, with outputs
-docs/                       the live dashboard (HTML, CSS, JavaScript and exported data)
+scripts/air_quality_forecast.py   the same pipeline as a plain Python script
+app/                        Streamlit app (streamlit_app.py, common.py, requirements.txt)
+docs/                       the static dashboard served by GitHub Pages
 data/                       raw data is downloaded here by the notebook (not committed)
-requirements.txt            Python dependencies
+requirements.txt            Python dependencies for the notebook
 ```
 
 ## Run it yourself
