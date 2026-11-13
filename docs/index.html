@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tomorrow's air quality in ten major cities</title>
+<meta name="description" content="Live next-day PM2.5 forecasts for ten cities in Africa, Asia and Latin America, from a model trained on four years of Copernicus data.">
+<link rel="stylesheet" href="app.css">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <p class="eyebrow">Climate and environment · Air quality</p>
+    <h1>How clean will the air be tomorrow?</h1>
+    <p class="lede">Live next-day forecasts of fine particle pollution (PM2.5) for ten major cities. This page fetches the latest pollution and weather data when you open it and runs the forecasting model in your browser.</p>
+    <div class="links">
+      <a href="https://github.com/Chiamaka-Uchenna/urban-air-quality-forecast/blob/main/notebooks/air_quality_forecast.ipynb">Read the notebook</a>
+      <a href="https://github.com/Chiamaka-Uchenna/urban-air-quality-forecast">Source on GitHub</a>
+      <a href="https://open-meteo.com/en/docs/air-quality-api">Data (Copernicus CAMS via Open-Meteo)</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section><div class="tiles" id="tiles"></div></section>
+
+  <section>
+    <h2>Live forecast</h2>
+    <p class="section-note" id="live-note">Fetching the latest data…</p>
+    <div class="card">
+      <div class="table-wrap" style="max-height:none"><table id="t-live"></table></div>
+      <div class="controls" style="margin-top:16px"><label class="field">City<select id="f-city"></select></label></div>
+      <div class="result" style="margin-top:0;margin-bottom:14px">
+        <div>
+          <div class="label" id="live-label">Forecast</div>
+          <div class="big" id="live-value">–</div>
+          <span class="badge" id="live-badge"></span>
+        </div>
+        <div><p id="live-text"></p><p id="live-text2"></p></div>
+      </div>
+      <div class="chart" id="c-live"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How polluted are these cities</h2>
+    <p class="section-note">Averages from August 2022 to November 2026. The WHO guideline for the annual average is 5 micrograms per cubic metre.</p>
+    <div class="grid">
+      <div class="card"><h3>Average PM2.5</h3><p class="sub">Every city is above the guideline, the worst by a factor of fourteen.</p><div class="chart" id="c-mean"></div></div>
+      <div class="card"><h3>Days above the WHO 24-hour guideline</h3><p class="sub">Share of days with a daily average over 15.</p><div class="chart" id="c-days"></div></div>
+      <div class="card" style="grid-column:1/-1"><h3>When is the air worst</h3><p class="sub">Monthly average PM2.5. Colour shows each month relative to that city's own average, so seasons can be compared across cities.</p><div class="chart tall" id="c-season"></div></div>
+      <div class="card"><h3>Wind clears the air</h3><p class="sub">PM2.5 relative to the city average, by wind speed.</p><div class="chart" id="c-wind"></div></div>
+      <div class="card"><h3>So does rain</h3><p class="sub">PM2.5 relative to the city average.</p><div class="chart" id="c-rain"></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How good is the forecast</h2>
+    <p class="section-note">Trained on data to October 2025 and tested on the following 12 months. The baseline, persistence, assumes tomorrow will be the same as today.</p>
+    <div class="grid">
+      <div class="card"><h3>Forecast error by city</h3><p class="sub">Mean absolute error in micrograms per cubic metre. Lower is better.</p><div class="chart tall" id="c-bycity"></div></div>
+      <div class="card"><h3>Forecast against outcome</h3><p class="sub">Last 120 days of the test period for the city selected above.</p><div class="chart tall" id="c-recent"></div></div>
+      <div class="card"><h3>What drives the forecast</h3><p class="sub">Mean absolute SHAP value.</p><div class="chart tall" id="c-imp"></div></div>
+      <div class="card"><h3>Scores on the held-out year</h3><p class="sub">All cities together.</p><div class="table-wrap" style="max-height:none"><table id="t-metrics"></table></div>
+        <h3 style="margin-top:16px">As a warning for high pollution days</h3><p class="sub">A high day is one in the worst quarter of that city's own record.</p><div class="table-wrap" style="max-height:none"><table id="t-alerts"></table></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Method and limits</h2>
+    <ul class="notes">
+      <li>PM2.5 comes from the Copernicus Atmosphere Monitoring Service global analysis, which combines satellite observations with an atmospheric model on a grid of about 40 km. It is not a ground measurement and understates roadside peaks.</li>
+      <li>Weather comes from the ERA5 reanalysis for training and from the Open-Meteo forecast for the live prediction.</li>
+      <li>Model: gradient boosted trees predicting the change in log PM2.5 from today to tomorrow, using recent pollution levels, today's and tomorrow's weather, season and day of week.</li>
+      <li>The range shown with each forecast is an 80 percent interval taken from past forecast errors. It covered 77.5 percent of outcomes in the test year.</li>
+      <li>Today's value includes Copernicus forecast hours for the part of the day that has not happened yet.</li>
+    </ul>
+  </section>
+</main>
+
+<footer><div class="wrap">Built by Chiamaka Uchenna. Air quality data from Copernicus CAMS and weather from ECMWF, via Open-Meteo.</div></footer>
+
+<script src="core.js"></script>
+<script>
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const level = (v) => v <= 15 ? ["good", "Within WHO daily guideline"] : v <= 37.5 ? ["warning", "Moderate"] : v <= 75 ? ["critical", "High"] : ["critical", "Very high"];
+const longDate = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+
+/* Daily means from hourly values, keeping only days with at least 18 hours. */
+const dailyMeans = (times, values) => {
+  const days = new Map();
+  times.forEach((t, i) => {
+    if (values[i] === null) return;
+    const day = t.slice(0, 10);
+    if (!days.has(day)) days.set(day, []);
+    days.get(day).push(values[i]);
+  });
+  return [...days.entries()].filter(([, v]) => v.length >= 18).map(([day, v]) => ({ day, pm: v.reduce((a, b) => a + b, 0) / v.length }));
+};
+
+/* Same feature construction as the notebook. */
+const buildFeatures = (model, cityIndex, nCities, pm, weatherToday, weatherTomorrow, tomorrowIso) => {
+  const logs = pm.map((v) => Math.log(Math.max(v, 0.5)));
+  const n = logs.length;
+  const week = logs.slice(n - 7);
+  const weekMean = week.reduce((a, b) => a + b, 0) / 7;
+  const date = new Date(`${tomorrowIso}T00:00:00Z`);
+  const doy = Math.round((date - Date.UTC(date.getUTCFullYear(), 0, 1)) / 86400000) + 1;
+  const values = {
+    l1: logs[n - 1], l2: logs[n - 2], l3: logs[n - 3],
+    m7: Math.log(pm.slice(n - 7).reduce((a, b) => a + b, 0) / 7),
+    s7: Math.sqrt(week.reduce((a, b) => a + (b - weekMean) ** 2, 0) / 6),
+    d1: logs[n - 1] - logs[n - 2],
+    temp_today: weatherToday.temp, humidity_today: weatherToday.humidity, wind_today: weatherToday.wind, rain_today: Math.log1p(weatherToday.rain),
+    temp_tom: weatherTomorrow.temp, humidity_tom: weatherTomorrow.humidity, wind_tom: weatherTomorrow.wind, rain_tom: Math.log1p(weatherTomorrow.rain),
+    doy_sin: Math.sin((2 * Math.PI * doy) / 365.25), doy_cos: Math.cos((2 * Math.PI * doy) / 365.25),
+    dow: (date.getUTCDay() + 6) % 7,
+  };
+  for (let j = 0; j < nCities; j++) values[`city_${j}`] = j === cityIndex ? 1 : 0;
+  return model.features.map((name) => values[name]);
+};
+
+(async () => {
+  const [model, s] = await Promise.all([DS.load("data/model.json"), DS.load("data/summary.json")]);
+  const cities = s.cities;
+  const gbm = s.metrics.find((m) => m.model === "Gradient boosting");
+  const worst = s.stats[0];
+
+  /* self-check: the browser scorer must reproduce the notebook's prediction */
+  const firstCity = cities[0].name;
+  const checkPred = Math.exp(s.check[firstCity].features[0] + DS.predict(model, s.check[firstCity].features));
+  window.__selfCheck = { browser: checkPred, notebook: s.check[firstCity].prediction };
+
+  DS.tiles("tiles", [
+    { label: "City-days analysed", value: DS.fmt(s.city_days, 0), note: `${DS.fmt(s.hourly_values, 0)} hourly readings, 10 cities` },
+    { label: "Cities above the WHO guideline", value: "10 of 10", note: `${worst.city} averages ${worst.times_who_annual.toFixed(0)} times the limit` },
+    { label: "Forecast error against baseline", value: `-${Math.round(s.improvement * 100)}%`, note: "lower than assuming tomorrow equals today" },
+    { label: "Typical forecast error", value: `${gbm["Median error (%)"].toFixed(0)}%`, note: "median, on a year the model never saw" },
+  ]);
+
+  DS.fill(document.getElementById("f-city"), cities.map((c) => c.name), "Lagos");
+  const live = {};
+
+  const drawCity = () => {
+    const name = document.getElementById("f-city").value;
+    const city = cities.find((c) => c.name === name);
+    const r = live[name];
+    if (r) {
+      const [cls, label] = level(r.forecast);
+      document.getElementById("live-label").textContent = `${name}, ${longDate(r.tomorrow)}`;
+      document.getElementById("live-value").textContent = `${r.forecast.toFixed(0)} µg/m³`;
+      const badge = document.getElementById("live-badge");
+      badge.textContent = label; badge.className = `badge ${cls}`;
+      document.getElementById("live-text").textContent =
+        `Likely range ${r.low.toFixed(0)} to ${r.high.toFixed(0)}. Today is ${r.today.toFixed(0)}, so the model expects ${r.forecast > r.today * 1.05 ? "worse air" : r.forecast < r.today * 0.95 ? "cleaner air" : "little change"} tomorrow. ` +
+        `That is ${(r.forecast / 15).toFixed(1)} times the WHO 24-hour guideline of 15.`;
+      document.getElementById("live-text2").textContent =
+        `${r.forecast > city.threshold ? `Above ${name}'s high pollution threshold of ${city.threshold.toFixed(0)}: a warning would be issued.` : `Below ${name}'s high pollution threshold of ${city.threshold.toFixed(0)}.`} ` +
+        `Tomorrow's weather: wind ${r.wx.wind.toFixed(0)} km/h, rain ${r.wx.rain.toFixed(1)} mm.` +
+        (r.cams !== null ? ` Copernicus's own forecast for tomorrow is ${r.cams.toFixed(0)}.` : "");
+      const days = r.history;
+      DS.plot("c-live", [
+        { type: "bar", x: days.map((d) => d.day), y: days.map((d) => d.pm), name: "Observed daily mean", marker: { color: DS.css("--series-1") }, hovertemplate: "%{x|%a %d %b}<br>%{y:.0f} µg/m³<extra></extra>" },
+        { type: "bar", x: [r.tomorrow], y: [r.forecast], name: "Forecast for tomorrow", marker: { color: DS.css("--series-2") },
+          error_y: { type: "data", symmetric: false, array: [r.high - r.forecast], arrayminus: [r.forecast - r.low], color: DS.css("--text-secondary"), thickness: 1.5, width: 6 },
+          hovertemplate: "%{x|%a %d %b}<br>Forecast %{y:.0f} µg/m³<extra></extra>" },
+      ], {
+        bargap: 0.3, xaxis: { type: "date", tickformat: "%d %b", showgrid: false }, yaxis: { title: "PM2.5 (µg/m³)", rangemode: "tozero" },
+        shapes: [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: 15, y1: 15, line: { color: DS.css("--text-muted"), dash: "dot", width: 1.5 } }],
+        annotations: [{ xref: "paper", x: 0, y: 15, yshift: 9, xanchor: "left", text: "WHO 24-hour guideline", showarrow: false, font: { size: 11, color: DS.css("--text-muted") } }],
+      }, { table: false });
+    }
+    const rec = s.recent[name];
+    DS.plot("c-recent", [
+      { x: rec.dates, y: rec.actual, mode: "lines", name: "Actual", line: { color: DS.css("--series-1"), width: 2 }, hovertemplate: "%{x|%d %b %Y}<br>Actual %{y:.0f}<extra></extra>" },
+      { x: rec.dates, y: rec.forecast, mode: "lines", name: "Forecast made the day before", line: { color: DS.css("--series-2"), width: 2 }, hovertemplate: "%{x|%d %b %Y}<br>Forecast %{y:.0f}<extra></extra>" },
+    ], { xaxis: { type: "date" }, yaxis: { title: `PM2.5 in ${name} (µg/m³)`, rangemode: "tozero" }, hovermode: "x unified" }, { table: false });
+  };
+  document.getElementById("f-city").addEventListener("change", drawCity);
+  drawCity();
+
+  /* live data: one request for pollution and one for weather, all ten cities */
+  const fetchLive = async () => {
+    const lat = cities.map((c) => c.lat).join(","), lon = cities.map((c) => c.lon).join(",");
+    const [aq, wx] = await Promise.all([
+      DS.load(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&hourly=pm2_5&past_days=9&forecast_days=2&timezone=auto`),
+      DS.load(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_mean,precipitation_sum,wind_speed_10m_mean,relative_humidity_2m_mean&past_days=1&forecast_days=2&timezone=auto`),
+    ]);
+    cities.forEach((city, i) => {
+      const daily = dailyMeans(aq[i].hourly.time, aq[i].hourly.pm2_5);
+      const w = wx[i].daily;
+      const todayIso = w.time[1], tomorrowIso = w.time[2];
+      const upToToday = daily.filter((d) => d.day <= todayIso);
+      if (upToToday.length < 7 || upToToday[upToToday.length - 1].day !== todayIso) return;
+      const weather = (k) => ({ temp: w.temperature_2m_mean[k], rain: w.precipitation_sum[k] ?? 0, wind: w.wind_speed_10m_mean[k], humidity: w.relative_humidity_2m_mean[k] });
+      const features = buildFeatures(model, i, cities.length, upToToday.map((d) => d.pm), weather(1), weather(2), tomorrowIso);
+      if (features.some((v) => v === null || v === undefined || Number.isNaN(v))) return;
+      const today = upToToday[upToToday.length - 1].pm;
+      const forecast = Math.exp(features[0] + DS.predict(model, features));
+      const cams = daily.find((d) => d.day === tomorrowIso);
+      live[city.name] = { today, forecast, low: forecast * Math.exp(s.interval.low), high: forecast * Math.exp(s.interval.high),
+        tomorrow: tomorrowIso, history: upToToday.slice(-9), wx: weather(2), cams: cams ? cams.pm : null };
+    });
+  };
+
+  const drawLiveTable = () => {
+    const table = document.getElementById("t-live");
+    table.innerHTML = "";
+    const head = table.insertRow();
+    ["City", "Today", "Tomorrow (forecast)", "Likely range", "Times WHO guideline", "Outlook"].forEach((t) => { const th = document.createElement("th"); th.textContent = t; head.appendChild(th); });
+    cities.filter((c) => live[c.name]).sort((a, b) => live[b.name].forecast - live[a.name].forecast).forEach((c) => {
+      const r = live[c.name];
+      const row = table.insertRow();
+      [`${c.name}, ${c.country}`, r.today.toFixed(0), r.forecast.toFixed(0), `${r.low.toFixed(0)} to ${r.high.toFixed(0)}`, `${(r.forecast / 15).toFixed(1)}x`].forEach((v) => { row.insertCell().textContent = v; });
+      const cell = row.insertCell();
+      const [cls, label] = level(r.forecast);
+      const badge = document.createElement("span");
+      badge.className = `badge ${cls}`; badge.style.marginTop = "0";
+      badge.textContent = r.forecast > c.threshold ? `${label} · warning` : label;
+      cell.appendChild(badge);
+    });
+  };
+
+  fetchLive().then(() => {
+    const count = Object.keys(live).length;
+    document.getElementById("live-note").textContent = count
+      ? `Forecasts for tomorrow in each city's local time, computed in your browser just now from the latest Copernicus and weather data. Values are daily average PM2.5 in micrograms per cubic metre.`
+      : "Live data did not return enough recent days to make a forecast. The charts below show the model's tested performance.";
+    drawLiveTable();
+    drawCity();
+  }).catch(() => {
+    document.getElementById("live-note").textContent = "The live data service could not be reached, so no forecast is shown. The charts below show the model's tested performance.";
+  });
+
+  /* descriptive charts */
+  const stats = [...s.stats].reverse();
+  DS.plot("c-mean", [{ type: "bar", orientation: "h", y: stats.map((r) => r.city), x: stats.map((r) => r.mean_pm25), name: "Mean PM2.5", marker: { color: DS.css("--series-1") },
+    customdata: stats.map((r) => r.times_who_annual), hovertemplate: "%{y}<br>%{x:.0f} µg/m³<br>%{customdata:.1f} times the WHO guideline<extra></extra>" }],
+    { xaxis: { title: "Mean PM2.5 (µg/m³)" }, yaxis: { showgrid: false }, bargap: 0.3, margin: { l: 100, r: 16, t: 8, b: 44 },
+      shapes: [{ type: "line", yref: "paper", y0: 0, y1: 1, x0: 5, x1: 5, line: { color: DS.css("--text-muted"), dash: "dot", width: 1.5 } }] });
+
+  DS.plot("c-days", [{ type: "bar", orientation: "h", y: stats.map((r) => r.city), x: stats.map((r) => r.days_above_guideline * 100), name: "Days above 15 (%)", marker: { color: DS.css("--series-1") },
+    text: stats.map((r) => `${Math.round(r.days_above_guideline * 100)}%`), textposition: "outside", cliponaxis: false,
+    hovertemplate: "%{y}<br>%{x:.0f}% of days above 15<extra></extra>" }],
+    { xaxis: { title: "Share of days (%)", range: [0, 112] }, yaxis: { showgrid: false }, bargap: 0.3, margin: { l: 100, r: 30, t: 8, b: 44 } });
+
+  const m = s.monthly;
+  DS.plot("c-season", [{
+    type: "heatmap", z: m.relative, x: MONTHS, y: m.cities, customdata: m.values, text: m.values.map((row) => row.map((v) => v.toFixed(0))), texttemplate: "%{text}", textfont: { size: 11 },
+    colorscale: [[0, DS.css("--surface-1")], [1, DS.css("--series-1")]], zmin: 0.3, zmax: 2.2, xgap: 2, ygap: 2,
+    colorbar: { title: { text: "Ratio to city average", side: "right" }, thickness: 12, outlinewidth: 0 },
+    hovertemplate: "%{y}, %{x}<br>%{customdata:.0f} µg/m³<br>%{z:.2f} times the city average<extra></extra>",
+  }], { xaxis: { showgrid: false, type: "category" }, yaxis: { autorange: "reversed", showgrid: false, type: "category" }, margin: { l: 100, r: 16, t: 8, b: 36 } }, { table: false });
+
+  const one = [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: 1, y1: 1, line: { color: DS.css("--text-muted"), dash: "dot", width: 1.5 } }];
+  DS.plot("c-wind", [{ type: "bar", x: s.by_wind.labels, y: s.by_wind.values, name: "Relative PM2.5", marker: { color: DS.css("--series-1") },
+    text: s.by_wind.values.map((v) => v.toFixed(2)), textposition: "outside", cliponaxis: false, hovertemplate: "%{x}<br>%{y:.2f} times the city average<extra></extra>" }],
+    { xaxis: { showgrid: false }, yaxis: { title: "PM2.5 relative to city average", range: [0, 1.45] }, shapes: one, bargap: 0.35, margin: { l: 56, r: 16, t: 24, b: 44 } });
+  DS.plot("c-rain", [{ type: "bar", x: ["Dry day", "Rain over 1 mm"], y: [s.by_rain.dry, s.by_rain.rain], name: "Relative PM2.5", marker: { color: DS.css("--series-1") },
+    text: [s.by_rain.dry.toFixed(2), s.by_rain.rain.toFixed(2)], textposition: "outside", cliponaxis: false, hovertemplate: "%{x}<br>%{y:.2f} times the city average<extra></extra>" }],
+    { xaxis: { showgrid: false }, yaxis: { title: "PM2.5 relative to city average", range: [0, 1.45] }, shapes: one, bargap: 0.5, margin: { l: 56, r: 16, t: 24, b: 44 } });
+
+  /* model charts */
+  const bc = [...s.by_city].reverse();
+  DS.plot("c-bycity", [
+    { type: "bar", orientation: "h", y: bc.map((r) => r.city), x: bc.map((r) => r.persistence_mae), name: "Persistence", marker: { color: DS.css("--series-1") }, hovertemplate: "%{y}<br>Persistence %{x:.1f}<extra></extra>" },
+    { type: "bar", orientation: "h", y: bc.map((r) => r.city), x: bc.map((r) => r.model_mae), name: "Gradient boosting", marker: { color: DS.css("--series-2") },
+      customdata: bc.map((r) => r.improvement * 100), hovertemplate: "%{y}<br>Model %{x:.1f}<br>%{customdata:.0f}% lower than persistence<extra></extra>" },
+  ], { barmode: "group", bargap: 0.25, xaxis: { title: "Mean absolute error (µg/m³)" }, yaxis: { showgrid: false }, margin: { l: 100, r: 16, t: 8, b: 44 } });
+
+  const imp = [...s.importance].reverse();
+  DS.plot("c-imp", [{ type: "bar", orientation: "h", y: imp.map((r) => r.feature), x: imp.map((r) => r.value), name: "Mean |SHAP|", marker: { color: DS.css("--series-1") },
+    hovertemplate: "%{y}<br>%{x:.3f}<extra></extra>" }],
+    { xaxis: { title: "Mean absolute SHAP value" }, yaxis: { showgrid: false }, bargap: 0.3, margin: { l: 170, r: 16, t: 8, b: 44 } });
+
+  const buildTable = (id, headers, rows) => {
+    const table = document.getElementById(id);
+    const head = table.insertRow();
+    headers.forEach((t) => { const th = document.createElement("th"); th.textContent = t; head.appendChild(th); });
+    rows.forEach((cells) => { const row = table.insertRow(); cells.forEach((c) => { row.insertCell().textContent = c; }); });
+  };
+  buildTable("t-metrics", ["Method", "Mean error (µg/m³)", "Median error", "R squared"],
+    s.metrics.map((r) => [r.model, r["MAE (µg/m³)"].toFixed(2), `${r["Median error (%)"].toFixed(1)}%`, r["R squared"].toFixed(3)]));
+  buildTable("t-alerts", ["Method", "High days caught", "Warnings that were right", "Warnings issued"],
+    s.alerts.map((r) => [r.model, DS.pct(r.Recall, 0), DS.pct(r.Precision, 0), DS.fmt(r["Warnings issued"], 0)]));
+})().catch((err) => {
+  document.querySelector("main").insertAdjacentHTML("afterbegin", `<p class="section-note">Could not load the dashboard data: ${err.message}</p>`);
+});
+</script>
+</body>
+</html>
